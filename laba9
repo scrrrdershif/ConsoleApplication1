@@ -1,3 +1,4 @@
+
 #include <iostream>
 #include <vector>
 #include <string>
@@ -5,6 +6,8 @@
 #include <stdexcept>
 #include <memory>
 #include <random>
+#include <algorithm> // для std::find
+
 template<typename T>
 class Inventory {
     std::vector<T> items;
@@ -12,19 +15,19 @@ public:
     void addItem(const T& item) {
         items.push_back(item);
     }
-
     void removeItem(const T& item) {
-        auto it = find(items.begin(), items.end(), item);
+        auto it = std::find(items.begin(), items.end(), item);
         if (it != items.end()) items.erase(it);
     }
-
     void showInventory() const {
         std::cout << "Inventory:\n";
         for (const auto& item : items)
             std::cout << "- " << item << std::endl;
     }
 };
+
 class Character {
+private:
     std::string name;
     int health;
     int attack;
@@ -37,24 +40,21 @@ public:
     Character(const std::string& n, int h, int a, int d)
         : name(n), health(h), attack(a), defense(d), level(1), experience(0) {
     }
-
-    void attackEnemy(Character& enemy) {
-        int damage = attack - enemy.defense;
+    void attackEnemy(Monster& enemy) {
+        int damage = attack - enemy.getDefense();
         if (damage > 0) {
-            enemy.health -= damage;
-            std::cout << name << " attacks " << enemy.name << " for " << damage << " damage!" << std::endl;
+            enemy.takeDamage(damage);
+            std::cout << name << " attacks " << enemy.getHealth() << " HP enemy for " << damage << " damage!" << std::endl;
         }
         else {
-            std::cout << name << " attacks " << enemy.name << ", but it has no effect!" << std::endl;
+            std::cout << name << " attacks, but it has no effect!" << std::endl;
         }
     }
-
     void heal(int amount) {
         health += amount;
         if (health > 100) health = 100;
         std::cout << name << " heals for " << amount << " HP!" << std::endl;
     }
-
     void gainExperience(int exp) {
         experience += exp;
         if (experience >= 100) {
@@ -66,33 +66,37 @@ public:
     void addToInventory(const std::string& item) {
         inventory.addItem(item);
     }
-
     void displayInfo() const {
         std::cout << "Name: " << name << ", HP: " << health
             << ", Attack: " << attack << ", Defense: " << defense
             << ", Level: " << level << ", Experience: " << experience << std::endl;
         inventory.showInventory();
     }
-
+    std::string getName() const {
+        return name;
+    }
+    int getHealth() const {
+        return health;
+    }
     int getDefense() const {
         return defense;
+    }
+    int getAttack() const {
+        return attack;
     }
     void save(std::ofstream& file) const {
         file << name << "\n" << health << " " << attack << " "
             << defense << " " << level << " " << experience << "\n";
     }
-
     void load(std::ifstream& file) {
         file >> name >> health >> attack >> defense >> level >> experience;
     }
-
     bool isAlive() const { return health > 0; }
 
     void takeDamage(int damage) {
         health -= damage;
         if (health < 0) health = 0;
     }
-
 };
 class Monster {
 protected:
@@ -104,15 +108,15 @@ public:
     Monster(const std::string& n, int h, int a, int d)
         : name(n), health(h), attack(a), defense(d) {
     }
-     void attackEnemy(Character& enemy) {
+    virtual void attackEnemy(Character& enemy) {
         int damage = attack - enemy.getDefense();
         if (damage > 0) {
             enemy.takeDamage(damage);
             std::cout << name << " attacks for " << damage << " damage!" << std::endl;
-    }
+        }
         else {
             std::cout << name << " attacks, but it has no effect!" << std::endl;
-}
+        }
     }
     virtual void displayInfo() const {
         std::cout << "Name: " << name << ", HP: " << health << ", ATK: " << attack << ", Defense: " << defense << std::endl;
@@ -125,7 +129,7 @@ public:
 };
 class Goblin : public Monster {
 public:
-     Goblin() : Monster("Goblin", 30, 8, 2) {}
+    Goblin() : Monster("Goblin", 30, 8, 2) {}
 };
 class Skeleton : public Monster {
 public:
@@ -145,56 +149,22 @@ class GameManager {
         monsters.push_back(std::make_unique<Skeleton>());
         monsters.push_back(std::make_unique<Dragon>());
     }
-
 public:
     void startGame() {
         std::string name;
-        std::cout << "Введите имя персонажа: ";
+        std::cout << "Enter Name on English: ";
         std::cin >> name;
         player = std::make_unique<Character>(name, 100, 15, 5);
 
         generateMonsters();
-        std::cout << "Игра началась!\n";
+        std::cout << "The Game has started!\n";
     }
-
-    void battle() {
-        std::random_device rd;
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_int_distribution<> dis(0, monsters.size() - 1);
-
-        auto& monster = monsters[dis(gen)];
-        std::cout << "\nYou were attacked by: ";
-        monster->displayInfo();
-
-        while (player->isAlive() && monster->isAlive()) {
-            // Ход игрока
-            player->attackEnemy(*monster);
-            if (!monster->isAlive()) {
-                std::cout << "Monster defeated!\n";
-                player->gainExperience(30);
-                player->addToInventory("Gold");
-                return;
-            }
-
-            // Ход монстра
-            monster->attackEnemy(*player);
-            if (!player->isAlive()) {
-                std::cout << "The player is defeated!\n";
-                return;
-            }
-        }
-    }
-
     void saveGame(const std::string& filename) {
         std::ofstream file(filename);
-        if (!file) {
-            std::cout <<"Game save error" << std::endl;
-        }
+        if (!file) { std::cout << "Game save error" << std::endl; }
         player->save(file);
         file.close();
     }
-
     void loadGame(const std::string& filename) {
         std::ifstream file(filename);
         if (!file) {
@@ -204,10 +174,35 @@ public:
         player->load(file);
         file.close();
     }
+    void battle() {
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_int_distribution<> dis(0, monsters.size() - 1);
 
+        auto& monster = monsters[dis(gen)];
+        std::cout << "\nYou were attacked by: ";
+        monster->displayInfo();
+
+        while (player->isAlive() && monster->isAlive()) {
+            player->attackEnemy(*monster);
+            if (!monster->isAlive()) {
+                std::cout << "Monster defeated!\n";
+                player->gainExperience(30);
+                player->addToInventory("Gold");
+                return;
+            }
+
+            monster->attackEnemy(*player);
+            if (!player->isAlive()) {
+                std::cout << "The player is defeated!\n";
+                return;
+            }
+        }
+    }
     void showPlayerStatus() const {
         player->displayInfo();
     }
+
 };
 
 int main() {
@@ -230,6 +225,5 @@ int main() {
     catch (...) {
         std::cerr << "Unknown error!" << std::endl;
     }
-
     return 0;
 }
